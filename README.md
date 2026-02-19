@@ -53,7 +53,7 @@ Register as a launchd user agent so the server starts automatically on login:
 make launchd-install
 ```
 
-This copies a plist to `~/Library/LaunchAgents/` and loads it. The server will restart automatically if it crashes (`KeepAlive` is enabled). Logs go to `/tmp/openwhisper-cleanup-server.log`.
+This copies a plist to `~/Library/LaunchAgents/` and loads it. The server will appear under "Open at Login" in macOS Settings > Login Items. Logs go to `/tmp/openwhisper-cleanup-server.log`.
 
 To remove:
 

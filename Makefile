@@ -35,6 +35,7 @@ uninstall:
 
 launchd-install: $(INSTALL_DIR)/$(BIN_NAME)
 	mkdir -p $(PLIST_DIR)
+	-launchctl unload $(PLIST_DIR)/$(PLIST_NAME).plist 2>/dev/null
 	sed 's|__BIN__|$(INSTALL_DIR)/$(BIN_NAME)|g' $(PLIST_NAME).plist > $(PLIST_DIR)/$(PLIST_NAME).plist
 	launchctl load $(PLIST_DIR)/$(PLIST_NAME).plist
 	@echo "Launch agent loaded. Server will start on login."
