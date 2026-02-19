@@ -4,3 +4,4 @@ langdetect
 text2num
 punctuators
 language_tool_python
+nuitka[onefile]
