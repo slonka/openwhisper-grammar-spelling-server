@@ -33,7 +33,8 @@ Single-file server (`server.py`) with a 6-stage text cleanup pipeline in `run_pi
 3. **Inverse text normalization (ITN)** - converts number words to digits. Polish uses `pl-itn` (`NormalizerPL`), English uses `text2num`
 4. **Punctuation/capitalization** - `punctuators` ONNX model (`pcs_47lang`)
 5. **Word corrections** - regex-based context-triggered fixes for compound word splits/joins (Polish) and homophone confusion (English); no extra dependencies
-6. **Grammar correction** - `language_tool_python` (separate instances for pl-PL and en-US)
+6. **User replacements** - user-defined word/phrase replacements from `~/.config/openwhisper-cleanup/replacements.json`
+7. **Grammar correction** - `language_tool_python` (separate instances for pl-PL and en-US)
 
 All dependencies are optional - each import is wrapped in try/except and the pipeline gracefully skips unavailable stages.
 
@@ -46,6 +47,10 @@ All dependencies are optional - each import is wrapped in try/except and the pip
 ## Conventions
 
 - Use `jq` instead of `python3 -m json.tool` for formatting JSON output.
+
+## Configuration
+
+User-defined word replacements can be added in `~/.config/openwhisper-cleanup/replacements.json`. The file contains a JSON array of objects with `from`, `to`, and optional `lang` (`"pl"` or `"en"`) fields. Rules are loaded once at startup; restart the server to pick up changes.
 
 ## Key Detail
 

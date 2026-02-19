@@ -1,7 +1,9 @@
+import json
 import re
 import logging
 import time
 import uuid
+from pathlib import Path
 from typing import NamedTuple
 
 from fastapi import FastAPI, Request
@@ -191,6 +193,69 @@ PL_WORD_CORRECTION_RULES = _compile_rules(_PL_WORD_CORRECTION_RULES_RAW)
 EN_WORD_CORRECTION_RULES = _compile_rules(_EN_WORD_CORRECTION_RULES_RAW)
 
 # ---------------------------------------------------------------------------
+# User-defined word replacements from config file
+# ---------------------------------------------------------------------------
+
+_USER_REPLACEMENTS_PATH = (
+    Path.home() / ".config" / "openwhisper-cleanup" / "replacements.json"
+)
+
+
+def _load_user_replacements():
+    """Load user-defined replacement rules from config file.
+
+    Returns a list of (rule, lang_filter) tuples where lang_filter is
+    None (apply to both), "pl", or "en".
+    """
+    if not _USER_REPLACEMENTS_PATH.is_file():
+        return []
+
+    try:
+        data = json.loads(_USER_REPLACEMENTS_PATH.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError) as e:
+        logger.warning("Failed to read user replacements file: %s", e)
+        return []
+
+    if not isinstance(data, list):
+        logger.warning("User replacements file must contain a JSON array")
+        return []
+
+    rules = []
+    for i, entry in enumerate(data):
+        if not isinstance(entry, dict):
+            logger.warning("User replacement #%d: expected object, skipping", i)
+            continue
+        from_text = entry.get("from")
+        to_text = entry.get("to")
+        if not from_text or not isinstance(from_text, str):
+            logger.warning("User replacement #%d: missing/invalid 'from', skipping", i)
+            continue
+        if to_text is None or not isinstance(to_text, str):
+            logger.warning("User replacement #%d: missing/invalid 'to', skipping", i)
+            continue
+
+        lang_filter = entry.get("lang")
+        if lang_filter is not None and lang_filter not in ("pl", "en"):
+            logger.warning(
+                "User replacement #%d: invalid lang %r, ignoring filter", i, lang_filter
+            )
+            lang_filter = None
+
+        pattern = re.compile(r"\b" + re.escape(from_text) + r"\b", re.IGNORECASE)
+        rule = WordCorrectionRule(
+            pattern=pattern,
+            replacement=to_text,
+            description=f"{from_text} -> {to_text}",
+        )
+        rules.append((rule, lang_filter))
+
+    logger.info("Loaded %d user replacement rule(s) from %s", len(rules), _USER_REPLACEMENTS_PATH)
+    return rules
+
+
+USER_REPLACEMENT_RULES = _load_user_replacements()
+
+# ---------------------------------------------------------------------------
 # English ITN - number words to digits
 # ---------------------------------------------------------------------------
 
@@ -363,6 +428,29 @@ def apply_word_corrections(text: str, lang: str) -> str:
         return text
 
 
+def apply_user_replacements(text: str, lang: str) -> str:
+    """Apply user-defined word replacements from config file."""
+    if not USER_REPLACEMENT_RULES:
+        return text
+    try:
+        for rule, lang_filter in USER_REPLACEMENT_RULES:
+            if lang_filter is not None and lang_filter != lang:
+                continue
+            if _BACKREF_RE.search(rule.replacement):
+                new_text = rule.pattern.sub(rule.replacement, text)
+            else:
+                new_text = rule.pattern.sub(
+                    _preserve_case_replacement(rule.replacement), text
+                )
+            if new_text != text:
+                logger.debug("User replacement: %s", rule.description)
+                text = new_text
+        return text
+    except Exception as e:
+        logger.warning("User replacement failed: %s", e)
+        return text
+
+
 def correct_grammar(text: str, lang: str) -> str:
     tool = lt_pl if lang == "pl" else lt_en
     if tool is None:
@@ -400,6 +488,10 @@ def run_pipeline(text: str) -> str:
     # 4.5 Context-triggered word corrections
     text = apply_word_corrections(text, lang)
     logger.info("Words:    %r", text)
+
+    # 4.7 User-defined replacements
+    text = apply_user_replacements(text, lang)
+    logger.info("User:     %r", text)
 
     # 5. Grammar correction
     text = correct_grammar(text, lang)
