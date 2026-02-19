@@ -204,8 +204,9 @@ _USER_REPLACEMENTS_PATH = (
 def _load_user_replacements():
     """Load user-defined replacement rules from config file.
 
-    Returns a list of (rule, lang_filter) tuples where lang_filter is
-    None (apply to both), "pl", or "en".
+    Returns a list of (rule, lang_filter, escape_info) tuples where lang_filter
+    is None (apply to both), "pl", or "en", and escape_info is None or
+    (compiled_escape_pattern, from_text).
     """
     if not _USER_REPLACEMENTS_PATH.is_file():
         return []
@@ -241,13 +242,21 @@ def _load_user_replacements():
             )
             lang_filter = None
 
+        escape_info = None
+        escape_text = entry.get("escape")
+        if escape_text and isinstance(escape_text, str):
+            escape_pattern = re.compile(
+                r"\b" + re.escape(escape_text) + r"\b", re.IGNORECASE
+            )
+            escape_info = (escape_pattern, from_text)
+
         pattern = re.compile(r"\b" + re.escape(from_text) + r"\b", re.IGNORECASE)
         rule = WordCorrectionRule(
             pattern=pattern,
             replacement=to_text,
             description=f"{from_text} -> {to_text}",
         )
-        rules.append((rule, lang_filter))
+        rules.append((rule, lang_filter, escape_info))
 
     logger.info("Loaded %d user replacement rule(s) from %s", len(rules), _USER_REPLACEMENTS_PATH)
     return rules
@@ -433,7 +442,23 @@ def apply_user_replacements(text: str, lang: str) -> str:
     if not USER_REPLACEMENT_RULES:
         return text
     try:
-        for rule, lang_filter in USER_REPLACEMENT_RULES:
+        # Pass 1: protect escape phrases with placeholders
+        escapes = []
+        for rule, lang_filter, escape_info in USER_REPLACEMENT_RULES:
+            if lang_filter is not None and lang_filter != lang:
+                continue
+            if escape_info is None:
+                continue
+            escape_pattern, from_text = escape_info
+            idx = len(escapes)
+            placeholder = f"\x00ESC{idx}\x00"
+            new_text = escape_pattern.sub(placeholder, text)
+            if new_text != text:
+                escapes.append((placeholder, from_text))
+                text = new_text
+
+        # Pass 2: apply replacements
+        for rule, lang_filter, escape_info in USER_REPLACEMENT_RULES:
             if lang_filter is not None and lang_filter != lang:
                 continue
             if _BACKREF_RE.search(rule.replacement):
@@ -445,6 +470,11 @@ def apply_user_replacements(text: str, lang: str) -> str:
             if new_text != text:
                 logger.debug("User replacement: %s", rule.description)
                 text = new_text
+
+        # Pass 3: restore escape placeholders back to original words
+        for placeholder, from_text in escapes:
+            text = text.replace(placeholder, from_text)
+
         return text
     except Exception as e:
         logger.warning("User replacement failed: %s", e)
