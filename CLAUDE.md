@@ -50,9 +50,7 @@ All dependencies are optional - each import is wrapped in try/except and the pip
 
 ## Configuration
 
-User-defined word replacements can be added in `~/.config/openwhisper-cleanup/replacements.json`. The file contains a JSON array of objects with `from`, `to`, optional `lang` (`"pl"` or `"en"`), and optional `escape` fields. Rules are loaded once at startup; restart the server to pick up changes.
-
-The `escape` field provides an escape mechanism for symbol replacements. When present, saying the escape phrase keeps the literal word instead of replacing it. Example: `{"from": "slash", "to": "/", "escape": "literal slash"}` - "slash" in speech becomes `/`, but "literal slash" becomes `slash`.
+User-defined word replacements can be added in `~/.config/openwhisper-cleanup/replacements.json`. The file contains a JSON array of objects with `from`, `to`, and optional `lang` (`"pl"` or `"en"`) fields. Rules are loaded once at startup; restart the server to pick up changes.
 
 ## Key Detail
 
