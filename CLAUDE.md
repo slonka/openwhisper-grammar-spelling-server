@@ -16,6 +16,10 @@ pip install -r requirements.txt
 
 # Run (listens on 0.0.0.0:8787)
 python server.py
+
+# Benchmark (server must be running)
+python bench.py
+python bench.py --rounds 5 --warmup 2
 ```
 
 No tests or linting configured.
