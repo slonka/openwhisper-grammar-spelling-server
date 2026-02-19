@@ -1,0 +1,6 @@
+fastapi
+uvicorn[standard]
+langdetect
+text2num
+punctuators
+language_tool_python
