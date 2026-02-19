@@ -22,13 +22,14 @@ No tests or linting configured.
 
 ## Architecture
 
-Single-file server (`server.py`) with a 5-stage text cleanup pipeline in `run_pipeline()`:
+Single-file server (`server.py`) with a 6-stage text cleanup pipeline in `run_pipeline()`:
 
 1. **Language detection** - `langdetect` to classify as Polish or English (defaults to Polish)
 2. **Filler removal** - regex-based removal of speech fillers ("yyy", "um", "jakby", etc.)
 3. **Inverse text normalization (ITN)** - converts number words to digits. Polish uses `pl-itn` (`NormalizerPL`), English uses `text2num`
 4. **Punctuation/capitalization** - `punctuators` ONNX model (`pcs_47lang`)
-5. **Grammar correction** - `language_tool_python` (separate instances for pl-PL and en-US)
+5. **Word corrections** - regex-based context-triggered fixes for compound word splits/joins (Polish) and homophone confusion (English); no extra dependencies
+6. **Grammar correction** - `language_tool_python` (separate instances for pl-PL and en-US)
 
 All dependencies are optional - each import is wrapped in try/except and the pipeline gracefully skips unavailable stages.
 
@@ -37,6 +38,10 @@ All dependencies are optional - each import is wrapped in try/except and the pip
 - `POST /v1/chat/completions` - main endpoint; extracts last user message, runs pipeline, returns OpenAI-compatible response
 - `POST /v1/responses` - returns 404 to force OpenWhispr to fall back to `/v1/chat/completions`
 - `GET /v1/models` - lists the single `text-cleanup-pipeline` model
+
+## Conventions
+
+- Use `jq` instead of `python3 -m json.tool` for formatting JSON output.
 
 ## Key Detail
 

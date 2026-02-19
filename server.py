@@ -2,6 +2,7 @@ import re
 import logging
 import time
 import uuid
+from typing import NamedTuple
 
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
@@ -61,6 +62,133 @@ EN_FILLERS = re.compile(
     r"|literally|i mean|sort of|kind of|right)\b",
     re.IGNORECASE,
 )
+
+# ---------------------------------------------------------------------------
+# Context-triggered word correction rules
+# ---------------------------------------------------------------------------
+
+
+class WordCorrectionRule(NamedTuple):
+    pattern: re.Pattern
+    replacement: str
+    description: str
+
+
+def _compile_rules(raw_rules):
+    """Compile raw rule dicts into WordCorrectionRule tuples."""
+    return [
+        WordCorrectionRule(
+            pattern=re.compile(r["pattern"], re.IGNORECASE),
+            replacement=r["replacement"],
+            description=r["description"],
+        )
+        for r in raw_rules
+    ]
+
+
+_PL_WORD_CORRECTION_RULES_RAW = [
+    # Joins: STT splits compound words
+    {"pattern": r"\bna\s+prawdę\b", "replacement": "naprawdę",
+     "description": "na prawdę -> naprawdę"},
+    {"pattern": r"\bna\s+przeciwko\b", "replacement": "naprzeciwko",
+     "description": "na przeciwko -> naprzeciwko"},
+    {"pattern": r"\bpo\s+nad\s+to\b", "replacement": "ponadto",
+     "description": "po nad to -> ponadto"},
+    {"pattern": r"\bpo\s+mimo\b", "replacement": "pomimo",
+     "description": "po mimo -> pomimo"},
+    {"pattern": r"\bdla\s+tego\b", "replacement": "dlatego",
+     "description": "dla tego -> dlatego"},
+    {"pattern": r"\bpo\s+nie\s+waż\b", "replacement": "ponieważ",
+     "description": "po nie waż -> ponieważ"},
+    # Splits: STT joins separate words
+    {"pattern": r"\bnapewno\b", "replacement": "na pewno",
+     "description": "napewno -> na pewno"},
+    {"pattern": r"\bwogóle\b", "replacement": "w ogóle",
+     "description": "wogóle -> w ogóle"},
+    {"pattern": r"\bnarazie\b", "replacement": "na razie",
+     "description": "narazie -> na razie"},
+    {"pattern": r"\bconajmniej\b", "replacement": "co najmniej",
+     "description": "conajmniej -> co najmniej"},
+    {"pattern": r"\bpoprostu\b", "replacement": "po prostu",
+     "description": "poprostu -> po prostu"},
+    {"pattern": r"\bprzedewszystkim\b", "replacement": "przede wszystkim",
+     "description": "przedewszystkim -> przede wszystkim"},
+]
+
+_EN_WORD_CORRECTION_RULES_RAW = [
+    # your + verb/adj -> you're
+    {"pattern": r"\byour\b(?=\s+(?:going|doing|being|making|getting|coming"
+                r"|running|saying|looking|trying|giving|taking|having"
+                r"|welcome|not|right|wrong))",
+     "replacement": "you're",
+     "description": "your + verb -> you're"},
+    # its + verb/adv -> it's
+    {"pattern": r"\bits\b(?=\s+(?:going|doing|being|getting|making|coming"
+                r"|running|not|been|just|about|really|very|always|never"
+                r"|still|already|only|also|a\b|the\b|so\b|ok\b|okay\b"
+                r"|true\b|possible\b|impossible\b|important\b))",
+     "replacement": "it's",
+     "description": "its + verb/adv -> it's"},
+    # there + verb -> they're
+    {"pattern": r"\bthere\b(?=\s+(?:going|doing|being|making|getting|coming"
+                r"|running|saying|looking|trying|giving|playing|telling"
+                r"|leaving|taking|having|showing|not|always|never|just"
+                r"|really|still|already))",
+     "replacement": "they're",
+     "description": "there + verb -> they're"},
+    # their + verb -> they're
+    {"pattern": r"\btheir\b(?=\s+(?:going|doing|being|making|getting|coming"
+                r"|running|saying|looking|trying|giving|playing|telling"
+                r"|leaving|taking|having|showing|not|always|never|just"
+                r"|really|still|already))",
+     "replacement": "they're",
+     "description": "their + verb -> they're"},
+    # whose + verb -> who's
+    {"pattern": r"\bwhose\b(?=\s+(?:going|doing|being|making|getting|coming"
+                r"|running|not|been|there|here))",
+     "replacement": "who's",
+     "description": "whose + verb -> who's"},
+    # weather + clause -> whether
+    {"pattern": r"\bweather\b(?=\s+(?:or|it|you|we|they|he|she|to\b|not\b))",
+     "replacement": "whether",
+     "description": "weather + clause -> whether"},
+    # comparative + then -> than
+    {"pattern": r"\b(more|less|better|worse|bigger|smaller|larger|higher"
+                r"|lower|faster|slower|older|younger|harder|easier"
+                r"|rather|other)\s+then\b",
+     "replacement": r"\1 than",
+     "description": "comparative + then -> than"},
+    # article/adj + affect -> effect
+    {"pattern": r"\b(the|an?|no|any|this|that|its|positive|negative)\s+affect\b",
+     "replacement": r"\1 effect",
+     "description": "article + affect -> effect"},
+    # modal/to + effect -> affect
+    {"pattern": r"\b(will|would|could|can|may|might|to|not)\s+effect\b",
+     "replacement": r"\1 affect",
+     "description": "modal + effect -> affect"},
+    # verb context + loose -> lose
+    {"pattern": r"\b(to|will|would|could|gonna|might|can|don't|didn't"
+                r"|won't|cannot)\s+loose\b",
+     "replacement": r"\1 lose",
+     "description": "verb context + loose -> lose"},
+    # modal + of -> have
+    {"pattern": r"\b(would|could|should|might|must)\s+of\b",
+     "replacement": r"\1 have",
+     "description": "modal + of -> have"},
+    # alot -> a lot
+    {"pattern": r"\balot\b", "replacement": "a lot",
+     "description": "alot -> a lot"},
+    # copula + to + adj -> too
+    {"pattern": r"\b(is|are|was|were|am|be|been)\s+to\b(?=\s+(?:big|small"
+                r"|large|much|many|few|little|hard|easy|late|early|fast"
+                r"|slow|long|short|hot|cold|old|young|good|bad|high|low"
+                r"|far|close|loud|quiet|expensive|cheap|difficult|simple))",
+     "replacement": r"\1 too",
+     "description": "copula + to + adj -> too"},
+]
+
+PL_WORD_CORRECTION_RULES = _compile_rules(_PL_WORD_CORRECTION_RULES_RAW)
+EN_WORD_CORRECTION_RULES = _compile_rules(_EN_WORD_CORRECTION_RULES_RAW)
 
 # ---------------------------------------------------------------------------
 # English ITN - number words to digits
@@ -200,6 +328,41 @@ def restore_punctuation(text: str) -> str:
     return text
 
 
+_BACKREF_RE = re.compile(r"\\[0-9]")
+
+
+def _preserve_case_replacement(replacement):
+    """Return a re.sub replacement function that preserves the case of the match."""
+    def _replacer(match):
+        original = match.group(0)
+        if original.isupper():
+            return replacement.upper()
+        if original[0].isupper():
+            return replacement[0].upper() + replacement[1:]
+        return replacement
+    return _replacer
+
+
+def apply_word_corrections(text: str, lang: str) -> str:
+    """Apply context-triggered word corrections for the given language."""
+    try:
+        rules = PL_WORD_CORRECTION_RULES if lang == "pl" else EN_WORD_CORRECTION_RULES
+        for rule in rules:
+            if _BACKREF_RE.search(rule.replacement):
+                new_text = rule.pattern.sub(rule.replacement, text)
+            else:
+                new_text = rule.pattern.sub(
+                    _preserve_case_replacement(rule.replacement), text
+                )
+            if new_text != text:
+                logger.debug("Word correction: %s", rule.description)
+                text = new_text
+        return text
+    except Exception as e:
+        logger.warning("Word correction failed: %s", e)
+        return text
+
+
 def correct_grammar(text: str, lang: str) -> str:
     tool = lt_pl if lang == "pl" else lt_en
     if tool is None:
@@ -233,6 +396,10 @@ def run_pipeline(text: str) -> str:
     # 4. Punctuation & capitalization
     text = restore_punctuation(text)
     logger.info("Punct:    %r", text)
+
+    # 4.5 Context-triggered word corrections
+    text = apply_word_corrections(text, lang)
+    logger.info("Words:    %r", text)
 
     # 5. Grammar correction
     text = correct_grammar(text, lang)
