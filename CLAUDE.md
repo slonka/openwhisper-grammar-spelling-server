@@ -50,7 +50,7 @@ All dependencies are optional - each import is wrapped in try/except and the pip
 
 ## Configuration
 
-User-defined word replacements can be added in `~/.config/openwhisper-cleanup/replacements.json`. The file contains a JSON array of objects with `from`, `to`, and optional `lang` (`"pl"` or `"en"`) fields. Rules are loaded once at startup; restart the server to pick up changes.
+User-defined word replacements can be added in `~/.config/openwhisper-cleanup/replacements.json`. The file contains a JSON object with a `"rules"` key holding an array of objects with `from`, `to`, and optional `lang` (`"pl"` or `"en"`) fields. A bare top-level array is also accepted for backward compatibility. Rules are loaded once at startup; restart the server to pick up changes.
 
 ## Key Detail
 

@@ -1,4 +1,4 @@
-PYTHON ?= python3
+PYTHON ?= .venv/bin/python
 SRC = server.py
 BIN_NAME = openwhisper-cleanup-server
 BUILD_DIR = build

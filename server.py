@@ -216,8 +216,10 @@ def _load_user_replacements():
         logger.warning("Failed to read user replacements file: %s", e)
         return []
 
-    if not isinstance(data, list):
-        logger.warning("User replacements file must contain a JSON array")
+    if isinstance(data, dict):
+        data = data.get("rules", [])
+    elif not isinstance(data, list):
+        logger.warning("User replacements file: expected object or array at top level")
         return []
 
     rules = []
