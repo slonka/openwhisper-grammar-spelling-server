@@ -17,6 +17,9 @@ pip install -r requirements.txt
 # Run (listens on 0.0.0.0:8787)
 python server.py
 
+# Dev (port 9787 - production runs on 8787 via launchd)
+make dev
+
 # Benchmark (server must be running)
 python bench.py
 python bench.py --rounds 5 --warmup 2
@@ -50,7 +53,7 @@ All dependencies are optional - each import is wrapped in try/except and the pip
 
 ## Configuration
 
-User-defined word replacements can be added in `~/.config/openwhisper-cleanup/replacements.json`. The file contains a JSON object with a `"rules"` key holding an array of objects with `from`, `to`, and optional `lang` (`"pl"` or `"en"`) fields. A bare top-level array is also accepted for backward compatibility. Rules are loaded once at startup; restart the server to pick up changes.
+User-defined word replacements can be added in `~/.config/openwhisper-cleanup/replacements.json`. The file contains a JSON object with a `"rules"` key holding an array of objects with `from`, `to`, and optional `lang` (`"pl"` or `"en"`) fields. A bare top-level array is also accepted for backward compatibility. Rules are hot-reloaded on each request when the file's mtime changes - no restart needed.
 
 ## Key Detail
 

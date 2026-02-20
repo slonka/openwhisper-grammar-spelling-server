@@ -7,7 +7,12 @@ INSTALL_DIR = $(HOME)/bin
 PLIST_NAME = com.openwhispr.cleanup-server
 PLIST_DIR = $(HOME)/Library/LaunchAgents
 
-.PHONY: build install uninstall launchd-install launchd-uninstall clean
+DEV_PORT ?= 9787
+
+.PHONY: dev build install uninstall launchd-install launchd-uninstall clean
+
+dev:
+	PORT=$(DEV_PORT) $(PYTHON) server.py
 
 build:
 	$(PYTHON) -m nuitka \

@@ -255,7 +255,33 @@ def _load_user_replacements():
     return rules
 
 
-USER_REPLACEMENT_RULES = _load_user_replacements()
+_user_replacements_rules = _load_user_replacements()
+_user_replacements_mtime: float | None = None
+try:
+    _user_replacements_mtime = _USER_REPLACEMENTS_PATH.stat().st_mtime
+except OSError:
+    pass
+
+
+def _get_user_replacements():
+    """Return current user replacement rules, reloading if the config file changed."""
+    global _user_replacements_rules, _user_replacements_mtime
+    try:
+        mtime = _USER_REPLACEMENTS_PATH.stat().st_mtime
+    except OSError:
+        # File doesn't exist (or can't be read)
+        if _user_replacements_mtime is not None:
+            logger.info("User replacements file removed, clearing rules")
+            _user_replacements_rules = []
+            _user_replacements_mtime = None
+        return _user_replacements_rules
+
+    if mtime != _user_replacements_mtime:
+        logger.info("User replacements file changed, reloading")
+        _user_replacements_rules = _load_user_replacements()
+        _user_replacements_mtime = mtime
+
+    return _user_replacements_rules
 
 # ---------------------------------------------------------------------------
 # English ITN - number words to digits
@@ -432,10 +458,11 @@ def apply_word_corrections(text: str, lang: str) -> str:
 
 def apply_user_replacements(text: str, lang: str) -> str:
     """Apply user-defined word replacements from config file."""
-    if not USER_REPLACEMENT_RULES:
+    rules = _get_user_replacements()
+    if not rules:
         return text
     try:
-        for rule, lang_filter in USER_REPLACEMENT_RULES:
+        for rule, lang_filter in rules:
             if lang_filter is not None and lang_filter != lang:
                 continue
             if _BACKREF_RE.search(rule.replacement):
@@ -559,6 +586,8 @@ async def list_models():
 
 
 if __name__ == "__main__":
+    import os
     import uvicorn
 
-    uvicorn.run(app, host="0.0.0.0", port=8787)
+    port = int(os.environ.get("PORT", "8787"))
+    uvicorn.run(app, host="0.0.0.0", port=port)
