@@ -1,6 +1,7 @@
 import json
 import re
 import logging
+import logging.handlers
 import time
 import uuid
 from pathlib import Path
@@ -11,6 +12,17 @@ from fastapi.responses import JSONResponse
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("cleanup-server")
+
+_LOG_DIR = Path.home() / "Library" / "Logs" / "openwhisper-cleanup"
+_LOG_DIR.mkdir(parents=True, exist_ok=True)
+_file_handler = logging.handlers.TimedRotatingFileHandler(
+    _LOG_DIR / "server.log",
+    when="W0",  # rotate weekly on Monday
+    backupCount=4,
+    encoding="utf-8",
+)
+_file_handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s:%(name)s:%(message)s"))
+logging.getLogger().addHandler(_file_handler)
 
 # ---------------------------------------------------------------------------
 # Optional imports - gracefully degrade if unavailable

@@ -10,9 +10,7 @@
 	</array>
 	<key>RunAtLoad</key>
 	<true/>
-	<key>StandardOutPath</key>
-	<string>/tmp/openwhisper-cleanup-server.log</string>
-	<key>StandardErrorPath</key>
-	<string>/tmp/openwhisper-cleanup-server.log</string>
+	<key>KeepAlive</key>
+	<true/>
 </dict>
 </plist>
