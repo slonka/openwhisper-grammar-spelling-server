@@ -1,0 +1,16 @@
+services:
+  cleanup-server:
+    build: .
+    ports:
+      - "8787:8787"
+    environment:
+      - LT_URL=http://languagetool:8010/v2/check
+    depends_on:
+      - languagetool
+
+  languagetool:
+    image: erikvl87/languagetool
+    # no ports exposed - only accessible from cleanup-server
+    environment:
+      - Java_Xms=512m
+      - Java_Xmx=1g
