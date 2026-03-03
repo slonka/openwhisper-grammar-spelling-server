@@ -1,2 +1,137 @@
 [tools]
-java = "openjdk-17.0.2"
+rust = "latest"
+python = "3.12"
+uv = "latest"
+
+[tasks.setup-models]
+description = "Download ONNX model and generate tokenizer.json"
+run = """
+#!/usr/bin/env bash
+set -e
+
+# Download ONNX model
+mkdir -p models
+if [ ! -f "models/pcs_47lang.onnx" ]; then
+    echo "Downloading pcs_47lang.onnx..."
+    curl -L -o models/pcs_47lang.onnx https://huggingface.co/1-800-BAD-CODE/punct_cap_seg_47_language/resolve/main/punct_cap_seg_47lang.onnx
+else
+    echo "models/pcs_47lang.onnx already exists."
+fi
+
+# Generate tokenizer.json (XLM-RoBERTa style from SentencePiece model)
+if [ ! -f "models/tokenizer.json" ]; then
+    echo "Generating tokenizer.json..."
+    [ ! -d ".venv" ] && uv venv
+    uv pip install sentencepiece protobuf tokenizers
+    # Download SP model file first
+    curl -L -o models/spe_unigram_64k_lowercase_47lang.model https://huggingface.co/1-800-BAD-CODE/punct_cap_seg_47_language/resolve/main/spe_unigram_64k_lowercase_47lang.model
+    # Build tokenizer.json with XLM-RoBERTa vocab offsets
+    uv run python -c '
+import sentencepiece as spm
+from tokenizers import Tokenizer, models, pre_tokenizers, decoders, processors
+
+sp = spm.SentencePieceProcessor()
+sp.Load("models/spe_unigram_64k_lowercase_47lang.model")
+vocab = [("<s>", 0.0), ("<pad>", 0.0), ("</s>", 0.0), ("<unk>", 0.0)]
+for i in range(1, sp.GetPieceSize()):
+    vocab.append((sp.IdToPiece(i), float(sp.GetScore(i))))
+vocab.append(("<mask>", 0.0))
+tok = Tokenizer(models.Unigram(vocab, unk_id=3))
+tok.pre_tokenizer = pre_tokenizers.Metaspace(replacement=chr(0x2581), prepend_scheme="always")
+tok.decoder = decoders.Metaspace(replacement=chr(0x2581), prepend_scheme="always")
+tok.post_processor = processors.TemplateProcessing(
+    single="<s> $A </s>", pair="<s> $A </s> $B </s>",
+    special_tokens=[("<s>", 0), ("</s>", 2)])
+tok.save("models/tokenizer.json")
+print(f"Saved tokenizer.json with {len(vocab)} tokens")
+'
+else
+    echo "models/tokenizer.json already exists."
+fi
+
+# Generate tokenizer_pl_en.json for translation
+if [ ! -f "models/tokenizer_pl_en.json" ]; then
+    echo "Generating tokenizer_pl_en.json..."
+    [ ! -d ".venv" ] && uv venv
+    uv pip install transformers sentencepiece protobuf tokenizers
+    uv run python -c '
+import json, sentencepiece as spm
+from transformers import MarianTokenizer
+from tokenizers import Tokenizer, models, pre_tokenizers, decoders
+
+mt = MarianTokenizer.from_pretrained("Helsinki-NLP/opus-mt-pl-en")
+mt.save_pretrained("/tmp/marian_pl_en")
+sp = spm.SentencePieceProcessor()
+sp.Load("/tmp/marian_pl_en/source.spm")
+with open("/tmp/marian_pl_en/vocab.json") as f:
+    vj = json.load(f)
+id2tok = {v: k for k, v in vj.items()}
+vocab = []
+for i in range(max(vj.values()) + 1):
+    t = id2tok.get(i, "<unk>")
+    sid = sp.PieceToId(t)
+    s = float(sp.GetScore(sid)) if sid < sp.GetPieceSize() and (sid != sp.unk_id() or t == "<unk>") else -100.0
+    vocab.append((t, s))
+tok = Tokenizer(models.Unigram(vocab, unk_id=vj.get("<unk>", 1)))
+tok.pre_tokenizer = pre_tokenizers.Metaspace(replacement=chr(0x2581), prepend_scheme="always")
+tok.decoder = decoders.Metaspace(replacement=chr(0x2581), prepend_scheme="always")
+tok.save("models/tokenizer_pl_en.json")
+print(f"Saved tokenizer_pl_en.json with {len(vocab)} tokens")
+'
+    rm -rf /tmp/marian_pl_en
+else
+    echo "models/tokenizer_pl_en.json already exists."
+fi
+
+# Convert pytorch_model.bin to safetensors for translation model
+if [ ! -f "models/opus-mt-pl-en.safetensors" ]; then
+    echo "Converting opus-mt-pl-en to safetensors..."
+    [ ! -d ".venv" ] && uv venv
+    uv pip install torch safetensors huggingface_hub
+    uv run python -c '
+import torch
+from safetensors.torch import save_file
+from huggingface_hub import hf_hub_download
+
+path = hf_hub_download("Helsinki-NLP/opus-mt-pl-en", "pytorch_model.bin")
+state = torch.load(path, map_location="cpu", weights_only=True)
+# Clone shared embedding weights (safetensors does not support shared memory)
+shared = state.get("model.shared.weight")
+if shared is not None:
+    for key in ["model.encoder.embed_tokens.weight", "model.decoder.embed_tokens.weight"]:
+        state[key] = shared.clone()
+save_file(state, "models/opus-mt-pl-en.safetensors")
+print(f"Saved opus-mt-pl-en.safetensors ({len(state)} tensors)")
+'
+else
+    echo "models/opus-mt-pl-en.safetensors already exists."
+fi
+
+# Download translation model config
+if [ ! -f "models/opus-mt-pl-en-config.json" ]; then
+    echo "Downloading opus-mt-pl-en config.json..."
+    curl -L -o models/opus-mt-pl-en-config.json https://huggingface.co/Helsinki-NLP/opus-mt-pl-en/resolve/main/config.json
+else
+    echo "models/opus-mt-pl-en-config.json already exists."
+fi
+"""
+
+[tasks.build]
+description = "Build the Rust server in release mode"
+run = "cargo build --release"
+depends = ["setup-models"]
+
+[tasks.install]
+description = "Install the binary to ~/.local/bin"
+run = """
+#!/usr/bin/env bash
+mkdir -p ~/.local/bin
+cp target/release/openwhisper-cleanup-server ~/.local/bin/
+echo "Installed to ~/.local/bin/openwhisper-cleanup-server"
+"""
+depends = ["build"]
+
+[tasks.run]
+description = "Run the server"
+run = "./target/release/openwhisper-cleanup-server"
+depends = ["build"]
