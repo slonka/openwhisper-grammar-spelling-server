@@ -1,7 +1,19 @@
+# Rust
+target/
+
+# Python (legacy)
 .venv/
-.claude/
 __pycache__/
 *.pyc
 build/
 dist/
+
+# Models (downloaded by mise run setup-models)
+models/
+
+# Claude Code
+.claude/
+
+# Misc
 whisper-test-phrases.md
+.klaudiush/
