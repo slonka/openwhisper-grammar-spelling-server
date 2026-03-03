@@ -1,103 +1,89 @@
-# openwhisper-grammar-spelling-server
+# OpenWhisper Cleanup Server
 
-A post-processing server for [OpenWhispr](https://github.com/openwhispr) that cleans up speech-to-text output. Exposes OpenAI-compatible API endpoints and runs a pipeline of filler removal, inverse text normalization, punctuation restoration, and grammar correction. Supports Polish and English.
+Text cleanup server for [OpenWhispr](https://github.com/OpenWhispr/openwhispr). Takes raw speech-to-text output and fixes it up - adds punctuation, fixes spelling, removes filler words, and optionally translates Polish to English.
 
-## Building
+Exposes an OpenAI-compatible chat completions API so OpenWhispr can talk to it as a custom provider.
 
-Requires Python 3.12+, a C compiler, and [Nuitka](https://nuitka.net/).
+## What it does
 
-```bash
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-make build
-```
+The server runs text through an 8-stage pipeline:
 
-The binary is produced at `dist/openwhisper-cleanup-server`.
+1. Language detection (English or Polish)
+2. Filler word removal ("um", "uh", "no wiesz", etc.)
+3. Number normalization ("twenty three" -> "23")
+4. Punctuation and capitalization restoration (ONNX model)
+5. Spelling corrections (common mistakes per language)
+6. User-defined word replacements (hot-reloaded from config)
+7. Grammar checking (via LanguageTool)
+8. Translation (Polish -> English, optional)
 
-## Installing
+Each stage runs in order. If one fails, the rest keep going.
 
-Install the binary to `~/bin`:
-
-```bash
-make install
-```
-
-Make sure `~/bin` is in your PATH (add to `~/.zshrc` if not):
+## Quick start with Docker Compose
 
 ```bash
-export PATH="$HOME/bin:$PATH"
+mise run setup-models   # download ONNX model + generate tokenizers
+docker compose up -d --build
 ```
 
-To remove:
+This starts the cleanup server and LanguageTool together. The API is at `http://localhost:8787`. LanguageTool runs internally and isn't exposed.
+
+## Running locally
+
+Needs Rust 1.88+ and [mise](https://mise.jdx.dev/).
 
 ```bash
-make uninstall
+mise run setup-models   # first time only
+mise run run            # builds and starts the server
 ```
 
-## Running
+Or manually:
 
 ```bash
-openwhisper-cleanup-server
+cargo build --release
+./target/release/openwhisper-cleanup-server --port 8787
 ```
 
-The server listens on `http://0.0.0.0:8787`.
+For grammar checking, you need LanguageTool running separately (default: `http://localhost:8010/v2/check`). Without it, the grammar stage just gets skipped.
 
-Point OpenWhispr's post-processing URL to `http://localhost:8787/v1/chat/completions`.
+## Configuration
 
-## Benchmark
+CLI flags and matching env vars:
 
-20 test sentences (mixed Polish/English), 3 measured rounds, 1 warmup round.
+- `--port` / `PORT` - server port (default: 8787)
+- `--model-path` - path to ONNX punctuation model (default: `models/pcs_47lang.onnx`)
+- `--tokenizer-path` - path to tokenizer (default: `models/tokenizer.json`)
+- `--lt-url` / `LT_URL` - LanguageTool API URL (default: `http://localhost:8010/v2/check`)
 
-```
- Sentence (truncated)                      Lang   Mean ms
- ──────────────────────────────────────────────────────────
- yyy no więc jakby to jest ważne           pl        53.6
- eee znaczy generalnie chciałem powiedzie  pl        47.9
- napewno to jest na prawdę ważne           pl        47.0
- wogóle nie wiem co powiedzieć narazie     pl        46.1
- poprostu przedewszystkim trzeba to zrobi  pl        44.3
- dla tego po mimo wszystko udało się       pl        44.8
- po nie waż to jest na przeciwko           pl        44.5
- mam dwadzieścia trzy lata i mieszkam tu   pl        45.1
- yyy no więc jakby generalnie chciałem po  pl        45.4
- dzień dobry                               pl        43.6
- proszę o pomoc w tej sprawie              pl        45.1
- um like you know basically its fine       en        13.1
- uh i mean sort of actually right          en         8.6
- your going to loose alot                  en        13.3
- its going to effect the weather or not w  en        14.3
- there going to be better then us          en        11.8
- i would of done it if its possible        en        13.9
- i have twenty three cats and five dogs    en        11.8
- um like you know basically your going to  en        15.5
- hello world                               en        30.9
+## Models
 
- Overall latency (ms)
- ─────────────────────
- Min:        7.5
- Max:       65.6
- Mean:      32.0
- P50:       43.7
- P95:       57.5
- P99:       65.6
- Total:     1.9s
+The `/v1/models` endpoint lists two models:
+
+- `text-cleanup-pipeline` - cleanup without translation (default)
+- `text-cleanup-translate-pl-en` - cleanup + Polish-to-English translation
+
+Translation uses Helsinki-NLP/opus-mt-pl-en running locally via Candle. The model loads on first use, not at startup.
+
+## Custom word replacements
+
+Put a JSON file at `~/.config/openwhisper-cleanup/replacements.json`:
+
+```json
+{
+  "rules": [
+    { "from": "kubernetes", "to": "Kubernetes" },
+    { "from": "istio", "to": "Istio", "lang": "en" }
+  ]
+}
 ```
 
-Run `python bench.py` to reproduce (server must be running). See `python bench.py --help` for options.
+The server watches this file and reloads on change.
 
-## Auto-start on macOS login
+## OpenWhispr setup
 
-Register as a launchd user agent so the server starts automatically on login:
+In OpenWhispr settings, add a custom provider:
+- Endpoint: `http://localhost:8787/v1`
+- Pick a model from the dropdown
 
-```bash
-make launchd-install
-```
+The server ignores the system prompt and processes the user message directly through the pipeline.
 
-This copies a plist to `~/Library/LaunchAgents/` and loads it. The server will appear under "Open at Login" in macOS Settings > Login Items. Logs go to `/tmp/openwhisper-cleanup-server.log`.
-
-To remove:
-
-```bash
-make launchd-uninstall
-```
