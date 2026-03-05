@@ -14,7 +14,7 @@ The server runs text through an 8-stage pipeline:
 4. Punctuation and capitalization restoration (ONNX model)
 5. Spelling corrections (common mistakes per language)
 6. User-defined word replacements (hot-reloaded from config)
-7. Grammar checking (via LanguageTool)
+7. Grammar and spell checking (local Hunspell dictionaries)
 8. Translation (Polish -> English, optional)
 
 Each stage runs in order. If one fails, the rest keep going.
@@ -22,11 +22,12 @@ Each stage runs in order. If one fails, the rest keep going.
 ## Quick start with Docker Compose
 
 ```bash
-mise run setup-models   # download ONNX model + generate tokenizers
+mise run setup-models   # download ONNX model + generate tokenizers + dictionaries
 docker compose up -d --build
 ```
 
-This starts the cleanup server and LanguageTool together. The API is at `http://localhost:8787`. LanguageTool runs internally and isn't exposed.
+This starts the cleanup server.
+The API is at `http://localhost:8787`.
 
 ## Running locally
 
@@ -44,8 +45,6 @@ cargo build --release
 ./target/release/openwhisper-cleanup-server --port 8787
 ```
 
-For grammar checking, you need LanguageTool running separately (default: `http://localhost:8010/v2/check`). Without it, the grammar stage just gets skipped.
-
 ## Configuration
 
 CLI flags and matching env vars:
@@ -53,7 +52,7 @@ CLI flags and matching env vars:
 - `--port` / `PORT` - server port (default: 8787)
 - `--model-path` - path to ONNX punctuation model (default: `models/pcs_47lang.onnx`)
 - `--tokenizer-path` - path to tokenizer (default: `models/tokenizer.json`)
-- `--lt-url` / `LT_URL` - LanguageTool API URL (default: `http://localhost:8010/v2/check`)
+- `--dict-dir` - path to Hunspell dictionary directory (default: `models/dictionaries`)
 
 ## Models
 

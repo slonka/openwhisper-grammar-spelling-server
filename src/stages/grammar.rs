@@ -53,15 +53,17 @@ impl GrammarCorrector {
             _ => None,
         };
 
-        if let Some(dict) = dict {
-            result = spell_check(&result, dict);
-        }
-
-        // 2. Pattern rules
+        // 1. Pattern rules first (contractions must run before spell check,
+        // otherwise "didnt" gets spell-corrected to "dint")
         match lang {
             "pl" => result = apply_pl_commas(&result),
             "en" => result = apply_en_contractions(&result),
             _ => {}
+        }
+
+        // 2. Spell check
+        if let Some(dict) = dict {
+            result = spell_check(&result, dict);
         }
 
         result
@@ -131,8 +133,9 @@ fn spell_check(text: &str, dict: &Dictionary) -> String {
                 // The punctuation model can produce garbage mixed-case like
                 // "ChcIalbym", "bylO", "gotoWe" which confuses the spell checker.
                 let lower = word.to_lowercase();
+                let word_out = fix_garbage_case(word);
                 if dict.check(&lower) {
-                    result.push_str(word);
+                    result.push_str(&word_out);
                 } else {
                     suggestions.clear();
                     dict.suggest(&lower, &mut suggestions);
@@ -157,6 +160,33 @@ fn spell_check(text: &str, dict: &Dictionary) -> String {
 
 fn is_word_char(c: char) -> bool {
     c.is_alphabetic() || c == '\'' || c == '\u{2019}' // include apostrophes
+}
+
+/// Fix garbage mixed-case from the punctuation model (e.g. "gotoWe", "bylO", "ChcIalbym").
+/// Keeps all-lower, Title Case, and ALL UPPER as-is. For anything else, normalizes to
+/// lowercase (or title case if the first char was uppercase).
+fn fix_garbage_case(word: &str) -> String {
+    let chars: Vec<char> = word.chars().collect();
+    let first_upper = chars.first().map(|c| c.is_uppercase()).unwrap_or(false);
+    let all_upper = chars.iter().all(|c| c.is_uppercase() || !c.is_alphabetic());
+    let rest_lower = chars[1..].iter().all(|c| c.is_lowercase() || !c.is_alphabetic());
+
+    // all-lower, Title Case, or ALL UPPER -> keep as-is
+    if all_upper || rest_lower {
+        return word.to_string();
+    }
+
+    // Garbage case -> normalize
+    let lower = word.to_lowercase();
+    if first_upper {
+        let mut c = lower.chars();
+        match c.next() {
+            Some(ch) => ch.to_uppercase().collect::<String>() + c.as_str(),
+            None => lower,
+        }
+    } else {
+        lower
+    }
 }
 
 /// Preserve the case pattern of the original word in the replacement.

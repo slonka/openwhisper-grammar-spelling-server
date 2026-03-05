@@ -20,4 +20,4 @@ WORKDIR /app
 EXPOSE 8787
 
 ENTRYPOINT ["openwhisper-cleanup-server"]
-CMD ["--model-path", "models/pcs_47lang.onnx", "--tokenizer-path", "models/tokenizer.json"]
+CMD ["--model-path", "models/pcs_47lang.onnx", "--tokenizer-path", "models/tokenizer.json", "--dict-dir", "models/dictionaries"]
