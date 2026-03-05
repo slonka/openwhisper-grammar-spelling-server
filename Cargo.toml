@@ -17,7 +17,7 @@ text2num = "2.6.2"
 ort = { version = "2.0.0-rc.9", features = ["ndarray"] }
 ndarray = "0.17.2"
 notify = "8.0.0"
-reqwest = { version = "0.12.12", features = ["json"] }
+spellbook = "0.4"
 anyhow = "1.0.95"
 clap = { version = "4.5.28", features = ["derive", "env"] }
 tokenizers = { version = "0.21.0", features = ["http"] }

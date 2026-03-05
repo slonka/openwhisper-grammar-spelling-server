@@ -41,9 +41,9 @@ struct Args {
     #[arg(long, default_value = "models/tokenizer.json")]
     tokenizer_path: PathBuf,
 
-    /// LanguageTool API URL
-    #[arg(long, env = "LT_URL", default_value = "http://localhost:8010/v2/check")]
-    lt_url: String,
+    /// Path to Hunspell dictionary directory
+    #[arg(long, default_value = "models/dictionaries")]
+    dict_dir: PathBuf,
 }
 
 #[tokio::main]
@@ -63,7 +63,7 @@ async fn main() -> Result<()> {
     let pipeline = Arc::new(TextCleanupPipeline::new(
         args.model_path.clone(),
         args.tokenizer_path.clone(),
-        args.lt_url.clone(),
+        args.dict_dir.clone(),
     ));
 
     let state = AppState { pipeline };

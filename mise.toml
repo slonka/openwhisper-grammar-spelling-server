@@ -114,20 +114,71 @@ if [ ! -f "models/opus-mt-pl-en-config.json" ]; then
 else
     echo "models/opus-mt-pl-en-config.json already exists."
 fi
+
+# Download Hunspell dictionaries for spell checking
+DICT_BASE="https://raw.githubusercontent.com/wooorm/dictionaries/main/dictionaries"
+for lang in pl en; do
+    mkdir -p "models/dictionaries/${lang}"
+    for ext in aff dic; do
+        if [ ! -f "models/dictionaries/${lang}/index.${ext}" ]; then
+            echo "Downloading ${lang}/index.${ext}..."
+            curl -L -o "models/dictionaries/${lang}/index.${ext}" \
+                "${DICT_BASE}/${lang}/index.${ext}"
+        else
+            echo "models/dictionaries/${lang}/index.${ext} already exists."
+        fi
+    done
+done
+"""
+
+[tasks.setup-onnxruntime]
+description = "Download ONNX Runtime shared library for macOS"
+run = """
+#!/usr/bin/env bash
+set -e
+ORT_VERSION="1.23.2"
+ARCH=$(uname -m)
+ORT_DIR="onnxruntime-osx-${ARCH}-${ORT_VERSION}"
+DYLIB="libonnxruntime.${ORT_VERSION}.dylib"
+
+if [ -f "lib/${DYLIB}" ]; then
+    echo "lib/${DYLIB} already exists."
+    exit 0
+fi
+
+echo "Downloading ONNX Runtime ${ORT_VERSION} for ${ARCH}..."
+mkdir -p /tmp/ort-download
+curl -L -o "/tmp/ort-download/${ORT_DIR}.tgz" \
+    "https://github.com/microsoft/onnxruntime/releases/download/v${ORT_VERSION}/${ORT_DIR}.tgz"
+tar xzf "/tmp/ort-download/${ORT_DIR}.tgz" -C /tmp/ort-download/
+
+mkdir -p lib
+cp "/tmp/ort-download/${ORT_DIR}/lib/${DYLIB}" lib/
+ln -sf "${DYLIB}" lib/libonnxruntime.dylib
+rm -rf /tmp/ort-download
+echo "Installed lib/${DYLIB}"
 """
 
 [tasks.build]
 description = "Build the Rust server in release mode"
-run = "cargo build --release"
-depends = ["setup-models"]
-
-[tasks.install]
-description = "Install the binary to ~/.local/bin"
 run = """
 #!/usr/bin/env bash
+set -e
+ORT_LIB_LOCATION="$(pwd)/lib" ORT_PREFER_DYNAMIC_LINK=1 cargo build --release
+cp lib/libonnxruntime.*.dylib target/release/
+echo "Build complete. Binary and dylib are in target/release/"
+"""
+depends = ["setup-models", "setup-onnxruntime"]
+
+[tasks.install]
+description = "Install the binary and dylib to ~/.local/bin"
+run = """
+#!/usr/bin/env bash
+set -e
 mkdir -p ~/.local/bin
 cp target/release/openwhisper-cleanup-server ~/.local/bin/
-echo "Installed to ~/.local/bin/openwhisper-cleanup-server"
+cp target/release/libonnxruntime.*.dylib ~/.local/bin/
+echo "Installed to ~/.local/bin/"
 """
 depends = ["build"]
 
@@ -135,3 +186,52 @@ depends = ["build"]
 description = "Run the server"
 run = "./target/release/openwhisper-cleanup-server"
 depends = ["build"]
+
+[tasks.install-services]
+description = "Generate and install launchd plist for cleanup server"
+run = """
+#!/usr/bin/env bash
+set -e
+PROJECT_DIR="$(pwd)"
+MISE_BIN="$HOME/.local/bin/mise"
+AGENTS_DIR="$HOME/Library/LaunchAgents"
+LOGS_DIR="$HOME/Library/Logs"
+
+mkdir -p "$AGENTS_DIR"
+
+# Cleanup server plist
+cat > "$AGENTS_DIR/com.openwhispr.cleanup-server.plist" <<PLIST
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>Label</key>
+	<string>com.openwhispr.cleanup-server</string>
+	<key>ProgramArguments</key>
+	<array>
+		<string>$HOME/.local/bin/openwhisper-cleanup-server</string>
+		<string>--model-path</string>
+		<string>${PROJECT_DIR}/models/pcs_47lang.onnx</string>
+		<string>--tokenizer-path</string>
+		<string>${PROJECT_DIR}/models/tokenizer.json</string>
+		<string>--dict-dir</string>
+		<string>${PROJECT_DIR}/models/dictionaries</string>
+	</array>
+	<key>RunAtLoad</key>
+	<true/>
+	<key>KeepAlive</key>
+	<true/>
+	<key>StandardOutPath</key>
+	<string>${LOGS_DIR}/openwhisper-cleanup-server.log</string>
+	<key>StandardErrorPath</key>
+	<string>${LOGS_DIR}/openwhisper-cleanup-server.log</string>
+</dict>
+</plist>
+PLIST
+echo "Installed $AGENTS_DIR/com.openwhispr.cleanup-server.plist"
+
+echo ""
+echo "To activate, run:"
+echo "  launchctl load ~/Library/LaunchAgents/com.openwhispr.cleanup-server.plist"
+"""
+depends = ["install"]

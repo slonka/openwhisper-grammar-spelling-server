@@ -17,11 +17,11 @@ impl TextCleanupPipeline {
     pub fn new(
         model_path: PathBuf,
         tokenizer_path: PathBuf,
-        lt_url: String,
+        dict_dir: PathBuf,
     ) -> Self {
         let config = ConfigManager::new();
         let punctuator = Arc::new(punctuation::PunctuationModel::new(model_path, tokenizer_path));
-        let grammar_corrector = Arc::new(grammar::GrammarCorrector::new(lt_url));
+        let grammar_corrector = Arc::new(grammar::GrammarCorrector::new(dict_dir));
         let translator = Arc::new(Mutex::new(translation::Translator::new()));
 
         Self {
@@ -77,8 +77,8 @@ impl TextCleanupPipeline {
         }
         info!("User:     {:?}", processed);
 
-        // 7. Grammar correction (Async)
-        processed = self.grammar_corrector.correct(&processed, &lang).await;
+        // 7. Grammar correction
+        processed = self.grammar_corrector.correct(&processed, &lang);
         info!("Grammar:  {:?}", processed);
 
         // 8. Translation (if Polish and enabled)
